@@ -24,7 +24,7 @@ export async function POST(req: Request) {
     mode: 'subscription',
     customer: metadata.stripeCustomerId as string | undefined,
     line_items: [{ price: priceId, quantity: 1 }],
-    success_url: `${baseUrl}/app?subscribed=1`,
+    success_url: `${baseUrl}/app?subscribed=1&session_id={CHECKOUT_SESSION_ID}`,
     cancel_url: `${baseUrl}/subscribe`,
     metadata: { clerkUserId: userId },
   });

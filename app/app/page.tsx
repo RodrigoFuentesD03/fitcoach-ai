@@ -79,6 +79,7 @@ function AppPageInner() {
 
   const bottomRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const hasInitialized = useRef(false);
 
   // Auto-scroll to bottom on new messages
   useEffect(() => {
@@ -102,12 +103,14 @@ function AppPageInner() {
     }
   }, [messages]);
 
-  // Init trial, handle post-checkout polling, show welcome modal
+  // Init trial, handle post-checkout activation, show welcome modal
   useEffect(() => {
-    if (!isLoaded || !user) return;
+    if (!isLoaded || !user || hasInitialized.current) return;
+    hasInitialized.current = true;
 
     const metadata = user.publicMetadata as Record<string, unknown>;
     const comingFromCheckout = searchParams.get('subscribed') === '1';
+    const stripeSessionId = searchParams.get('session_id');
 
     async function init() {
       const isNew = !metadata.trialStartDate;
@@ -116,17 +119,19 @@ function AppPageInner() {
         // Brand new user — create trial + Stripe customer
         await fetch('/api/user/init', { method: 'POST' });
         await user!.reload();
-      } else if (comingFromCheckout) {
-        // Coming back from Stripe: poll Clerk until webhook updates the status
+      } else if (comingFromCheckout && stripeSessionId) {
+        // Verify payment directly with Stripe — no webhook dependency
         setActivating(true);
-        let attempts = 0;
-        while (attempts < 8) {
-          await user!.reload();
-          const fresh = user!.publicMetadata as Record<string, unknown>;
-          if (fresh.subscriptionStatus === 'active') break;
-          await new Promise((r) => setTimeout(r, 2000));
-          attempts++;
+        try {
+          await fetch('/api/stripe/activate', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ sessionId: stripeSessionId }),
+          });
+        } catch {
+          // Webhook may have already handled it — continue
         }
+        await user!.reload();
         setActivating(false);
         setShowSubscribedBanner(true);
         setTimeout(() => setShowSubscribedBanner(false), 6000);
@@ -146,7 +151,8 @@ function AppPageInner() {
     }
 
     init();
-  }, [isLoaded, user, router, searchParams]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isLoaded, user]);
 
   function dismissWelcome() {
     setShowWelcome(false);
