@@ -72,6 +72,7 @@ function AppPageInner() {
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [initializing, setInitializing] = useState(true);
+  const [activating, setActivating] = useState(false);
   const [showWelcome, setShowWelcome] = useState(false);
   const [showSubscribedBanner, setShowSubscribedBanner] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -101,25 +102,34 @@ function AppPageInner() {
     }
   }, [messages]);
 
-  // Show subscribed banner when redirected from Stripe
-  useEffect(() => {
-    if (searchParams.get('subscribed') === '1') {
-      setShowSubscribedBanner(true);
-      setTimeout(() => setShowSubscribedBanner(false), 5000);
-    }
-  }, [searchParams]);
-
-  // Init trial + show welcome modal
+  // Init trial, handle post-checkout polling, show welcome modal
   useEffect(() => {
     if (!isLoaded || !user) return;
 
     const metadata = user.publicMetadata as Record<string, unknown>;
+    const comingFromCheckout = searchParams.get('subscribed') === '1';
 
     async function init() {
       const isNew = !metadata.trialStartDate;
+
       if (isNew) {
+        // Brand new user — create trial + Stripe customer
         await fetch('/api/user/init', { method: 'POST' });
         await user!.reload();
+      } else if (comingFromCheckout) {
+        // Coming back from Stripe: poll Clerk until webhook updates the status
+        setActivating(true);
+        let attempts = 0;
+        while (attempts < 8) {
+          await user!.reload();
+          const fresh = user!.publicMetadata as Record<string, unknown>;
+          if (fresh.subscriptionStatus === 'active') break;
+          await new Promise((r) => setTimeout(r, 2000));
+          attempts++;
+        }
+        setActivating(false);
+        setShowSubscribedBanner(true);
+        setTimeout(() => setShowSubscribedBanner(false), 6000);
       }
 
       const refreshed = user!.publicMetadata as Record<string, unknown>;
@@ -136,7 +146,7 @@ function AppPageInner() {
     }
 
     init();
-  }, [isLoaded, user, router]);
+  }, [isLoaded, user, router, searchParams]);
 
   function dismissWelcome() {
     setShowWelcome(false);
@@ -187,9 +197,16 @@ function AppPageInner() {
 
   if (!isLoaded || initializing) {
     return (
-      <div className="flex h-full items-center justify-center flex-col gap-3">
+      <div className="flex h-full items-center justify-center flex-col gap-4">
         <div className="w-8 h-8 border-2 border-green-500 border-t-transparent rounded-full animate-spin" />
-        <p className="text-zinc-500 text-sm">Loading your session…</p>
+        {activating ? (
+          <>
+            <p className="text-white text-sm font-medium">Activating your subscription…</p>
+            <p className="text-zinc-500 text-xs">This takes a few seconds</p>
+          </>
+        ) : (
+          <p className="text-zinc-500 text-sm">Loading your session…</p>
+        )}
       </div>
     );
   }
