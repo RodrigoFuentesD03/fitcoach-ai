@@ -1,7 +1,7 @@
 'use client';
 
 import { useRef, useState, useEffect, KeyboardEvent, Suspense } from 'react';
-import { useUser } from '@clerk/nextjs';
+import { useUser, UserButton } from '@clerk/nextjs';
 import { useRouter, useSearchParams } from 'next/navigation';
 import ReactMarkdown from 'react-markdown';
 import WorkoutTracker from '@/components/WorkoutTracker';
@@ -334,6 +334,7 @@ function AppPageInner() {
               >
                 {isActive ? 'Manage plan' : 'Upgrade →'}
               </button>
+              <UserButton />
             </div>
           </header>
 
